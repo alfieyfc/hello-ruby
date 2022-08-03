@@ -1,0 +1,38 @@
+steps:
+  # Build Image
+  - id: 'Build Image'
+    waitFor: '-'
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+    - 'build'
+    - '.'
+    - '-f'
+    - 'Dockerfile'
+    - '-t'
+    - 'asia.gcr.io/$PROJECT_ID/hello-ruby:$SHORT_SHA'
+  # Update K8s Manifests
+  - id: 'Checkout IaC repo & update manifest'
+    waitFor: '-'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: '/bin/sh'
+    args:
+    - '-c'
+    - |
+      set -ex && \
+      git clone -b demo/k8s-manifests-hello git@github.com:easyship/devops-infra.git && \
+      cd devops-infra && \
+      sed "s/__IMAGE__/asia.gcr.io\/$PROJECT_ID\/hello-ruby/g" kubernetes/charts/hello-ruby/pod.yaml.tmpl | \
+      sed "s/__TAG__/$SHORT_SHA/g" > kubernetes/charts/hello-ruby/pod.yaml
+  - id: 'Push manifest'
+    waitFor: 'Checkout IaC repo & update manifest'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: '/bin/sh'
+    args:
+    - '-c'
+    - |
+      set -ex && \
+      cd devops-infra && \
+      git add kubernetes/charts/hello-ruby/pod.yaml && \
+      git commit -m "Deploying image asia.gcr.io/$PROJECT_ID/hello-ruby:$SHORT_SHA -- Built from commit $COMMIT_SHA. Author: $(git log --format='%an <%ae>' -n 1 HEAD)" && \
+      git push 
+
